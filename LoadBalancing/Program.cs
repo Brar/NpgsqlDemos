@@ -1,5 +1,6 @@
 using LoadBalancing;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 // The connection string should be "PrimaryConnection" here but there's a bug preventing this
@@ -10,6 +11,9 @@ builder.Services.AddDbContext<LongRunningQueryDbContext>(o => o.UseNpgsql(builde
 var app = builder.Build();
 
 Console.WriteLine($"Current process id is: {System.Diagnostics.Process.GetCurrentProcess().Id}");
+
+NpgsqlLogManager.Provider = new ConsoleLoggingProvider(NpgsqlLogLevel.Trace, true, true);
+NpgsqlLogManager.IsParameterLoggingEnabled = true;
 
 // Prepare the database and seed it with some initial data
 using (var scope = app.Services.CreateScope())
