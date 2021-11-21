@@ -27,7 +27,7 @@ namespace LoadBalancing
     {
         public LongRunningQueryDbContext(DbContextOptions<LongRunningQueryDbContext> options) : base (options) { }
 
-        public IQueryable<Pathogen> Pathogens => Set<Pathogen>().FromSqlRaw("SELECT *, pg_sleep(10) FROM pathogens").AsNoTracking();
+        public IQueryable<Pathogen> Pathogens => Set<Pathogen>().FromSqlRaw("SELECT * FROM pathogens p, pg_sleep(20)").AsNoTracking();
 
         public override int SaveChanges() => throw new InvalidOperationException("This context is read-only.");
 
