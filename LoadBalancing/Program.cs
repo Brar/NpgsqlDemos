@@ -3,8 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
-// The connection string should be "PrimaryConnection" here but there's a bug preventing this
-builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Temp")).UseSnakeCaseNamingConvention());
+builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("PrimaryConnection")).UseSnakeCaseNamingConvention());
 builder.Services.AddDbContext<QueryDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("ShortRunningQueryConnection")).UseSnakeCaseNamingConvention());
 builder.Services.AddDbContext<LongRunningQueryDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("LongRunningQueryConnection")).UseSnakeCaseNamingConvention());
 
@@ -16,12 +15,11 @@ NpgsqlLogManager.Provider = new ConsoleLoggingProvider(NpgsqlLogLevel.Trace, tru
 NpgsqlLogManager.IsParameterLoggingEnabled = true;
 
 // Prepare the database and seed it with some initial data
-using (var scope = app.Services.CreateScope())
+await using (var ctx = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(builder.Configuration.GetConnectionString("SetupConnection")).UseSnakeCaseNamingConvention().Options))
 {
-    var ctx = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await ctx.Database.EnsureDeletedAsync();
     await ctx.Database.EnsureCreatedAsync();
-    ctx.Pathogens.AddRange(new(){Name = "Acinetobacter baumannii"}, new(){Name = "Escherichia coli"}, new(){Name = "Klebsiella pneumoniae"}, new(){Name = "Staphylococcus aureus"});
+    await ctx.Pathogens.AddRangeAsync(new(){Name = "Acinetobacter baumannii"}, new(){Name = "Escherichia coli"}, new(){Name = "Klebsiella pneumoniae"}, new(){Name = "Staphylococcus aureus"});
     await ctx.SaveChangesAsync();
 }
 
