@@ -1,18 +1,14 @@
 using LoadBalancing;
 using Microsoft.EntityFrameworkCore;
-using Npgsql.Logging;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddConsole();
 builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("PrimaryConnection")).UseSnakeCaseNamingConvention());
 builder.Services.AddDbContext<QueryDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("ShortRunningQueryConnection")).UseSnakeCaseNamingConvention());
 builder.Services.AddDbContext<LongRunningQueryDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("LongRunningQueryConnection")).UseSnakeCaseNamingConvention());
 
 var app = builder.Build();
-
-Console.WriteLine($"Current process id is: {System.Diagnostics.Process.GetCurrentProcess().Id}");
-
-NpgsqlLogManager.Provider = new ConsoleLoggingProvider(NpgsqlLogLevel.Trace, true, true);
-NpgsqlLogManager.IsParameterLoggingEnabled = true;
 
 // Prepare the database and seed it with some initial data
 await using (var ctx = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(builder.Configuration.GetConnectionString("SetupConnection")).UseSnakeCaseNamingConvention().Options))
@@ -25,7 +21,7 @@ await using (var ctx = new ApplicationDbContext(new DbContextOptionsBuilder<Appl
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
+NpgsqlLoggingConfiguration.InitializeLogging(app.Services.GetRequiredService<ILoggerFactory>(), parameterLoggingEnabled: true);
 
 app.MapGet("/api/pathogens", async (LongRunningQueryDbContext db, string? name) => {
     var x = await (name == null
@@ -45,4 +41,5 @@ app.MapPost("/api/pathogens", async (ApplicationDbContext db, Pathogen pathogen)
     return Results.Created($"/api/pathogens/{pathogen.Id}", pathogen);
 });
 
+Console.WriteLine($"Current process id is: {System.Diagnostics.Process.GetCurrentProcess().Id}");
 app.Run();
