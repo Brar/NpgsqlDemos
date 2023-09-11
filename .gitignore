@@ -350,10 +350,10 @@ MigrationBackup/
 .ionide/
 
 # Project specific files and directories
-/pgsql
 /LoadBalancing/primary
 /LoadBalancing/replica_1
 /LoadBalancing/replica_2
 /LoadBalancing/replica_3
 /LoadBalancing/replica_4
 /LoadBalancing/replica_5
+/LogicalReplication/primary
