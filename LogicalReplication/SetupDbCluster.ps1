@@ -2,8 +2,12 @@
 param()
 #Requires -Version 7.3
 
-$StartPort = 5434
+$StartPort = 5432
+$DatabaseName = 'LogicalReplication'
+$PublicationName = 'hl7_message_pub'
 $PrimaryName = 'primary'
+$Verbose = $VerbosePreference -ne 'SilentlyContinue'
+
 
 # Try to detect initdb in the path and if that fails try a few knows PostgreSQL bin directories
 Get-Command -Name 'initdb' -CommandType Application -TotalCount 1 -Syntax -ErrorAction Ignore -OutVariable initdb > $null
@@ -35,37 +39,69 @@ $logFilePath = [System.IO.Path]::Join($PSScriptRoot, "$clusterName.log")
 # Check if cluster exists
 if (-not [System.IO.File]::Exists($configPath)) {
     Remove-Item -LiteralPath $clusterPath -Force -Recurse -ErrorAction Ignore
-    Write-Verbose "Initialising and starting cluster database for '$clusterName'..."
-    & $initdb -D $clusterPath -A trust --no-instructions > $null
 
+    Write-Host "Initialising database cluster '$clusterName'..." -NoNewline
+    if ($Verbose) { $lastOutput = '' }
+    $lastError = & $initdb -D $clusterPath -A trust --no-instructions 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+            $_
+        }
+        elseif ($Verbose) {
+            $lastOutput += (([System.Environment]::NewLine) + $_)
+        }
+    } | Join-String -Separator ([System.Environment]::NewLine)
+    if ($Verbose) { Write-Host; Write-Verbose $lastOutput }
+    if (-not $?) { Write-Host; Write-Error -Message $lastError -Category FromStdErr -ErrorAction Stop }
+    Write-Host "done" -ForegroundColor Green
+
+    Write-Host "Configuring database cluster '$clusterName'..." -NoNewline
     "port = $port
     unix_socket_directories = ''
     wal_level = logical
     cluster_name = '$clusterName'
     update_process_title = on" >> $configPath
-    & $pg_ctl -D $clusterPath -l $logFilePath -s start
-    Write-Verbose "Database cluster started"
+    Write-Host "done" -ForegroundColor Green
 
-    "CREATE DATABASE `"LogicalReplication`";
-    \c `"LogicalReplication`"
-    CREATE TABLE hl7_messages
-    (
-        id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-        message text NOT NULL,
-        other_stuff text
-    );
-    CREATE PUBLICATION hl7_message_pub FOR TABLE hl7_messages (id, message);
-    " | & $psql -h localhost -p $port -d postgres > $null
+    Write-Host "Starting database cluster '$clusterName'..." -NoNewline
+    & $pg_ctl -D $clusterPath -l $logFilePath -s start
+    if (-not $?) { exit 1 }
+    Write-Host "done" -ForegroundColor Green
+
+    Write-Host "Initialising database '$DatabaseName'..." -NoNewline
+    if ($Verbose) { $lastOutput = '' }
+    $lastError = "CREATE DATABASE `"$DatabaseName`";
+\c `"$DatabaseName`"
+CREATE TABLE hl7_messages
+(
+    id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    message text COMPRESSION lz4 NOT NULL,
+    message_timestamp timestamp with time zone NOT NULL
+);
+ALTER TABLE hl7_messages ALTER COLUMN message SET STORAGE MAIN;
+CREATE PUBLICATION `"$PublicationName`" FOR TABLE hl7_messages (id, message);" |
+    & $psql -h localhost -p $port -d postgres -a 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+            $_
+        }
+        elseif ($Verbose) {
+            $lastOutput += (([System.Environment]::NewLine) + $_)
+        }
+    } | Join-String -Separator ([System.Environment]::NewLine)
+    if ($Verbose) { Write-Host; Write-Verbose $lastOutput }
+    if (-not $?) { Write-Host; Write-Error -Message $lastError -Category FromStdErr -ErrorAction Stop }
+    Write-Host "done" -ForegroundColor Green
 }
 else {
     $pidFilePath = [System.IO.Path]::Join($clusterPath, 'postmaster.pid')
     if (-not [System.IO.File]::Exists($pidFilePath)) {
-        Write-Verbose "Starting database cluster for '$clusterName'..."
+        Write-Host "Starting database cluster '$clusterName'..." -NoNewline
         & $pg_ctl -D $clusterPath -l $logFilePath -s start
-        Write-Verbose "Database cluster started"
+        if (-not $?) { exit 1 }
+        Write-Host "done" -ForegroundColor Green
     }
 }
 
+Write-Host "Press CTRL+C to exit"
 [System.Console]::TreatControlCAsInput = $true
 while ($true)
 {
@@ -83,6 +119,16 @@ while ($true)
 
 $clusterName = $PrimaryName
 $clusterPath = [System.IO.Path]::Join($PSScriptRoot, $clusterName)
-Write-Verbose "Shutting down database cluster for '$clusterName'..."
-& $pg_ctl -D $clusterPath stop > $null
-Write-Verbose "Database cluster shut down"
+Write-Host "Shutting down database cluster '$clusterName'..." -NoNewline
+if ($Verbose) { $lastOutput = '' }
+$lastError = & $pg_ctl -D $clusterPath stop 2>&1 | ForEach-Object {
+    if ($_ -is [System.Management.Automation.ErrorRecord]) {
+        $_
+    }
+    elseif ($Verbose) {
+        $lastOutput += (([System.Environment]::NewLine) + $_)
+    }
+} | Join-String -Separator ([System.Environment]::NewLine)
+if ($Verbose) { Write-Host; Write-Verbose $lastOutput }
+if (-not $?) { Write-Host; Write-Error -Message $lastError -Category FromStdErr -ErrorAction Stop }
+Write-Host "done" -ForegroundColor Green
